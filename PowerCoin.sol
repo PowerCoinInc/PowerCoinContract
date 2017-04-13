@@ -1,5 +1,7 @@
 pragma solidity ^0.4.8;
 
+import "installed_contracts/zeppelin/contracts/SafeMath.sol";
+
 // @title PowerCoin
 contract PowerCoin {
 
@@ -76,6 +78,9 @@ contract PowerCoin {
         if (rxAccount.frozen) throw;
         if (txAccount.frozen) throw;
 
+        //Make sure that somet amount is being passed.
+        if (_value == 0) throw;
+
         //Check to make sure there is wattage to send.
         Wallet txWattage = txAccount.wattage[0];
         Wallet rxWattage = rxAccount.wattage[0];
@@ -93,11 +98,11 @@ contract PowerCoin {
         Wallet txCarbon = txAccount.carbon[0];
         Wallet rxCarbon = rxAccount.carbon[0];
 
-        if (txWattage.balance < _value) throw;           // Check if the sender has enough
+        if (txCarbon.balance < _value) throw;           // Check if the sender has enough
 
         // Perform the Transaction
-        txWattage.balance -= _value;
-        rxWattage.balance += _value;
+        txCarbon.balance -= _value;
+        rxCarbon.balance += _value;
 
         // Notify the blockchain
         Transfer(msg.sender, _to, _value);
@@ -131,18 +136,17 @@ contract PowerCoin {
     }
 
     // Set the price of a Megawatt Hour
-    function adjustWattagePrice(address _to, uint newPrice) {
+    function adjustWattagePrice(address _to, uint newPrice) onlyOwner {
         wattagePrice = newPrice;
     }
 
     // Set the price of a ton of Carbon
-    function adjustCarbonPrice(address _to, uint newPrice) {
+    function adjustCarbonPrice(address _to, uint newPrice) onlyOwner {
         carbonPrice = newPrice;
     }
 
     // Make `_newOwner` the new owner of this contract.
-    function changeOwner(address _newOwner) onlyOwner
-    {
+    function changeOwner(address _newOwner) onlyOwner {
         owner = _newOwner;
     }
 
