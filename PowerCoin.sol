@@ -1,28 +1,31 @@
 pragma solidity ^0.4.8;
 
-import "installed_contracts/zeppelin/contracts/SafeMath.sol";
+import "./installed_contracts/zeppelin/contracts/SafeMath.sol";
+import "./DateTime.sol";
 
 // @title PowerCoin
-contract PowerCoin {
+contract PowerCoin is SafeMath, DateTime{
 
     struct Wallet {
+
         string name;
         string symbol;
         uint decimals;
         uint balance;
+        uint lastUpdated;
     }
 
     struct powerAccount {
         address customer;
         bool frozen;
-        mapping (uint => Wallet) wattage;
-	    mapping (uint => Wallet) carbon;
-        mapping (uint => Wallet) usdBalance;
+        mapping (uint8 => mapping (uint16 => Wallet) ) wattage;
+	    mapping (uint8 => mapping (uint16 => Wallet) ) carbon;
+        Wallet usdBalance;
 	}
 
     /******** Mappings ********/
     // An array of all customers
-    mapping (address => powerAccount) public accounts;
+    mapping (address => powerAccount) accounts;
 
     // An array of all the frozen accounts.
     mapping (address => bool) public frozenAccount;
@@ -32,23 +35,27 @@ contract PowerCoin {
     //TestNet
     address public owner = 0xf6862A9749346DA65CA2163A485FE2b558E66fB2;
 
-    //Production address public owner =
+    //Production address
+    //public owner =
 
     string public tokenName = 'PowerCoin';
     uint8 public decimalUnits = 6;
-    uint public carbonPrice = 0;
-    uint public wattagePrice = 0;
+    uint public currentCarbonPrice = 0;
+    uint public currentWattagePrice = 0;
+
+    uint8 public currentMonth = DateTime.getMonth(block.timestamp); // Current month
+    uint16 public currentYear = DateTime.getYear(block.timestamp); // Current year
 
     // Initializes contract with initial supply tokens to the creator of the contract
     function newCustomer(address _to) {
-        powerAccount thisAccount = accounts[msg.sender];
+        powerAccount thisAccount = accounts[_to];
 
-        thisAccount.customer = msg.sender;
+        thisAccount.customer = _to;
         thisAccount.frozen = false;
 
-        Wallet wattageWallet = accounts[msg.sender].wattage[0];
-        Wallet carbonWallet = accounts[msg.sender].carbon[0];
-        Wallet dollarWallet = accounts[msg.sender].usdBalance[0];
+        Wallet wattageWallet = accounts[_to].wattage[currentMonth][currentYear];
+        Wallet carbonWallet = accounts[_to].carbon[currentMonth][currentYear];
+        Wallet dollarWallet = accounts[_to].usdBalance;
 
         // Create the Wattage Token
         wattageWallet.name = 'Wattage';
@@ -82,8 +89,8 @@ contract PowerCoin {
         if (_value == 0) throw;
 
         //Check to make sure there is wattage to send.
-        Wallet txWattage = txAccount.wattage[0];
-        Wallet rxWattage = rxAccount.wattage[0];
+        Wallet txWattage = txAccount.wattage[currentMonth][currentYear];
+        Wallet rxWattage = rxAccount.wattage[currentMonth][currentYear];
 
         if (txWattage.balance < _value) throw;           // Check if the sender has enough
 
@@ -95,8 +102,8 @@ contract PowerCoin {
         Transfer(msg.sender, _to, _value);
 
         //Check to make sure there is wattage to send.
-        Wallet txCarbon = txAccount.carbon[0];
-        Wallet rxCarbon = rxAccount.carbon[0];
+        Wallet txCarbon = txAccount.carbon[currentMonth][currentYear];
+        Wallet rxCarbon = rxAccount.carbon[currentMonth][currentYear];
 
         if (txCarbon.balance < _value) throw;           // Check if the sender has enough
 
@@ -113,18 +120,43 @@ contract PowerCoin {
 
     // Make more PowerCoin Wattage
     function mintWattage(address target, uint256 mintedAmount) onlyOwner {
-        Wallet wattageWallet = accounts[msg.sender].wattage[0];
+        Wallet wattageWallet = accounts[msg.sender].wattage[currentMonth][currentYear];
         wattageWallet.balance += mintedAmount;
 
-        PowerCoinAlert(block.timestamp, msg.sender, target, mintedAmount, "Minting more Wattage.");
+        PowerCoinAlert(block.timestamp, msg.sender, mintedAmount, "Minting more Wattage.");
     }
 
     // Make more Carbon Credits
     function mintCredits(address target, uint256 mintedAmount) onlyOwner {
-        Wallet carbonWallet = accounts[msg.sender].carbon[0];
+        Wallet carbonWallet = accounts[msg.sender].carbon[currentMonth][currentYear];
         carbonWallet.balance += mintedAmount;
 
-        PowerCoinAlert(block.timestamp, msg.sender, target, mintedAmount, "Minting more Carbon Credits.");
+        PowerCoinAlert(block.timestamp, msg.sender, mintedAmount, "Minting more Carbon Credits.");
+    }
+
+    //
+    function createWattageBill(address _account, uint8 month, uint year) {
+            powerAccount thisAccount = accounts[_account];
+
+            Wallet thisWattage = thisAccount.wattage[currentMonth][currentYear];
+            Wallet thisCarbon = thisAccount.carbon[currentMonth][currentYear];
+
+            if (thisWattage.balance >= 0 ) {
+
+                uint billAmount = SafeMath.safeMul(thisWattage.balance, currentWattagePrice);
+                thisWattage.balance = thisWattage.balance + billAmount;
+                thisWattage.lastUpdated = block.timestamp;
+
+                PowerCoinAlert(block.timestamp, msg.sender,
+                    thisWattage.balance, "Alert: Bill created.");
+            } else {
+                PowerCoinAlert(block.timestamp, msg.sender,
+                    thisWattage.balance, "Error: Bill creation");
+            }
+    }
+
+    function cashoutCarbon() {
+
     }
 
     // Freeze an inactive or abusive account
@@ -132,17 +164,17 @@ contract PowerCoin {
         powerAccount thisAccount = accounts[msg.sender];
         thisAccount.frozen = freeze;
 
-        FrozenFunds(target, freeze);
+        FrozenFunds(block.timestamp, target, freeze);
     }
 
     // Set the price of a Megawatt Hour
-    function adjustWattagePrice(address _to, uint newPrice) onlyOwner {
-        wattagePrice = newPrice;
+    function adjustWattagePrice(uint newPrice) onlyOwner {
+        currentWattagePrice = newPrice;
     }
 
     // Set the price of a ton of Carbon
-    function adjustCarbonPrice(address _to, uint newPrice) onlyOwner {
-        carbonPrice = newPrice;
+    function adjustCarbonPrice(uint newPrice) onlyOwner {
+        currentCarbonPrice = newPrice;
     }
 
     // Make `_newOwner` the new owner of this contract.
@@ -153,7 +185,7 @@ contract PowerCoin {
     /******** Modifers ********/
     modifier onlyOwner {
         if (msg.sender != owner) {
-            PowerCoinAlert(block.timestamp, msg.sender, owner, 0, "Error: Unauthorized Access Attempted");
+            PowerCoinAlert(block.timestamp, msg.sender, 0, "Error: Unauthorized Access Attempted");
         }
         _;
     }
@@ -161,12 +193,11 @@ contract PowerCoin {
     /******** Events ********/
     event PowerCoinAlert (uint eventTimeStamp,
                             address indexed callingAddress,
-                            address indexed meterKey,
                             uint indexed currentCoinValue,
                             string description);
 
     /* This generates a public event on the blockchain that will notify clients */
-    event FrozenFunds (address target, bool frozen);
+    event FrozenFunds (uint eventTimeStamp, address target, bool frozen);
 
     event Transfer(address indexed _from, address indexed _to, uint256 _value);
 
@@ -174,4 +205,5 @@ contract PowerCoin {
     function () {
         throw;     // Prevents accidental sending of ether
     }
+
 }
