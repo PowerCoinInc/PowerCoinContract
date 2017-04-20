@@ -2,9 +2,10 @@ pragma solidity ^0.4.8;
 
 import "./installed_contracts/zeppelin/contracts/SafeMath.sol";
 import "./DateTime.sol";
+import "./installed_contracts/zeppelin/contracts/Pausable.sol"
 
 // @title PowerCoin
-contract PowerCoin is SafeMath, DateTime{
+contract PowerCoin is SafeMath, DateTime, Pauseable {
 
     struct Wallet {
 
@@ -40,7 +41,7 @@ contract PowerCoin is SafeMath, DateTime{
 
     string public tokenName = 'PowerCoin';
     uint8 public decimalUnits = 6;
-    uint public currentCarbonPrice = 0;
+    uint public currentCarbonPrice = 10.00;
     uint public currentWattagePrice = 0;
 
     uint8 public currentMonth = DateTime.getMonth(block.timestamp); // Current month
@@ -118,6 +119,16 @@ contract PowerCoin is SafeMath, DateTime{
         return true;
     }
 
+    //ERC 20 Compliance
+    // Find out the money available
+    function balanceOf(address _owner) constant returns (uint256 balance) {
+        powerAccount txAccount = accounts[_owner];
+
+        Wallet wattage = txAccount.usdBalance;
+
+        return wattage.balance;
+    }
+
     // Make more PowerCoin Wattage
     function mintWattage(address target, uint256 mintedAmount) onlyOwner {
         Wallet wattageWallet = accounts[msg.sender].wattage[currentMonth][currentYear];
@@ -148,14 +159,18 @@ contract PowerCoin is SafeMath, DateTime{
                 thisWattage.lastUpdated = block.timestamp;
 
                 PowerCoinAlert(block.timestamp, msg.sender,
-                    thisWattage.balance, "Alert: Bill created.");
+                    thisWattage.balance, "Alert: Bill successfully created.");
             } else {
                 PowerCoinAlert(block.timestamp, msg.sender,
-                    thisWattage.balance, "Error: Bill creation");
+                    thisWattage.balance, "Error: Bill creation failed.");
             }
     }
 
     function cashoutCarbon() {
+
+    }
+
+    function cashoutWattage() {
 
     }
 
